@@ -13,7 +13,7 @@ No sprites, no audio files, no fonts to download.
 [![Tests](https://img.shields.io/badge/tests-18%20passing-30a46c)](#testing)
 [![Bundle](https://img.shields.io/badge/gzip-364%20KB-f5d90a)](#size-budget)
 
-[Türkçe dokümantasyon →](docs/README.tr.md)
+[Technical notes →](docs/TECHNICAL.md)
 
 </div>
 
@@ -34,6 +34,7 @@ No sprites, no audio files, no fonts to download.
 - [Project structure](#project-structure)
 - [Testing](#testing)
 - [Size budget](#size-budget)
+- [Technical notes](docs/TECHNICAL.md)
 - [Roadmap](#roadmap)
 - [Credits](#credits)
 - [Support](#support)
@@ -223,6 +224,9 @@ test/            core tests — node:test, no browser
 Every number lives in `src/core/balance.ts`. It is designed to be loaded from
 JSON and driven by remote config later, so balance can change without an app
 store release.
+
+> For the rendering pipeline, audio synthesis, responsive-layout maths and the
+> genre research behind the mechanics, see **[docs/TECHNICAL.md](docs/TECHNICAL.md)**.
 
 ## Testing
 
