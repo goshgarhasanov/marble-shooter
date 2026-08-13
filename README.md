@@ -20,7 +20,8 @@ No sprites, no audio files, no fonts to download.
 ---
 
 <div align="center">
-<img src="docs/screenshots/gameplay.jpg" alt="Gameplay" width="90%">
+<img src="docs/screenshots/gameplay.gif" alt="Gameplay recording" width="640">
+<br><sub>Live capture — matches, chain reactions, power-ups and the laser sight</sub>
 </div>
 
 ## Table of contents
@@ -35,6 +36,7 @@ No sprites, no audio files, no fonts to download.
 - [Size budget](#size-budget)
 - [Roadmap](#roadmap)
 - [Credits](#credits)
+- [Support](#support)
 
 ## Highlights
 
@@ -57,15 +59,42 @@ dictionary that turns a missing translation into a compile error.
 
 ## Screenshots
 
-<div align="center">
 <table>
 <tr>
-<td width="50%"><img src="docs/screenshots/menu.jpg" alt="Main menu"><br><em align="center">Main menu</em></td>
-<td width="50%"><img src="docs/screenshots/profile.jpg" alt="Player profile"><br><em>Player profile</em></td>
+<td width="50%">
+<img src="docs/screenshots/gameplay.jpg" alt="Gameplay with power-ups, coins and laser sight">
+<p align="center"><b>Gameplay</b><br><sub>Power-up marbles, coins, laser sight, lives and the Zuma meter</sub></p>
+</td>
+<td width="50%">
+<img src="docs/screenshots/menu.jpg" alt="Main menu">
+<p align="center"><b>Main menu</b><br><sub>Drifting marbles, animated title, four languages</sub></p>
+</td>
+</tr>
+<tr>
+<td width="50%">
+<img src="docs/screenshots/profile.jpg" alt="Player profile and statistics">
+<p align="center"><b>Player profile</b><br><sub>Ten persistent statistics, rename and reset</sub></p>
+</td>
+<td width="50%">
+<img src="docs/screenshots/settings.jpg" alt="Settings screen">
+<p align="center"><b>Settings</b><br><sub>Music and SFX sliders, announcer toggle, language</sub></p>
+</td>
+</tr>
+<tr>
+<td width="50%">
+<img src="docs/screenshots/name.jpg" alt="Username entry on first launch">
+<p align="center"><b>First launch</b><br><sub>Name asked once, then never again</sub></p>
+</td>
+<td width="50%">
+<img src="docs/screenshots/about.jpg" alt="About screen">
+<p align="center"><b>About</b><br><sub>Credits with an animated signature</sub></p>
+</td>
 </tr>
 </table>
-<img src="docs/screenshots/mobile.jpg" alt="Portrait phone layout" width="260">
-<br><em>Portrait phone — the spiral reshapes, no letterboxing</em>
+
+<div align="center">
+<img src="docs/screenshots/mobile.jpg" alt="Portrait phone layout" width="300">
+<p><b>Portrait phone</b><br><sub>The spiral reshapes to the aspect ratio — no letterboxing, no shrunken canvas</sub></p>
 </div>
 
 ## Quick start
@@ -233,7 +262,7 @@ available for future content.
 
 ## Credits
 
-Developed by **Goshgar Hasanzadeh**.
+Developed by **Goshgar Hasanzade**.
 
 Built with [Phaser 3](https://phaser.io/), [TypeScript](https://www.typescriptlang.org/)
 and [Vite](https://vite.dev/).
@@ -241,6 +270,17 @@ and [Vite](https://vite.dev/).
 > **Naming note:** *Zuma* is a trademark of PopCap/EA. The genre is free to
 > build in; the name is not. This project is called Marble Shooter and does
 > not use that mark in its title or store listing.
+
+## Support
+
+If you enjoy this project, you can support its development:
+
+<!-- KO-FI: replace <handle> with your Ko-fi username to activate. -->
+<!--
+[![Ko-fi](https://img.shields.io/badge/Ko--fi-Support%20this%20project-ff5e5b?logo=ko-fi&logoColor=white)](https://ko-fi.com/<handle>)
+-->
+
+Starring the repository also helps more than you would think.
 
 ### License
 
