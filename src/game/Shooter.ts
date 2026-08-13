@@ -31,6 +31,8 @@ export class Shooter {
   private readonly nextPreview: Phaser.GameObjects.Image
   /** Topun kurbağanın ağzında durduğu, merkeze olan uzaklık. */
   private readonly mouthOffset: number
+  /** Sıradaki topun kurbağanın sırtında durduğu, merkeze olan uzaklık. */
+  private readonly backOffset: number
 
   private readonly projectiles: Projectile[] = []
   private angle = -Math.PI / 2
@@ -61,23 +63,42 @@ export class Shooter {
     // Kurbağa yukarı bakacak şekilde çizildi; nişan alırken döndürülür.
     const frogSize = cfg.spacing * 3.4
     this.mouthOffset = frogSize * 0.34
+    this.backOffset = frogSize * 0.19
     this.frog = scene.add
       .image(x, y, TEX.frog)
       .setDisplaySize(frogSize, frogSize)
       .setDepth(18)
 
     this.loaded = scene.add
-      .image(x, y - this.mouthOffset, TEX.marble(this.currentColor))
+      .image(x, y, TEX.marble(this.currentColor))
       .setDisplaySize(this.cfg.spacing, this.cfg.spacing)
       .setDepth(20)
 
     this.sight = scene.add.graphics().setDepth(17)
 
     this.nextPreview = scene.add
-      .image(x, y + this.cfg.spacing * 1.35, TEX.marble(this.nextColor))
-      .setDisplaySize(this.cfg.spacing * 0.66, this.cfg.spacing * 0.66)
-      .setAlpha(0.75)
+      .image(x, y, TEX.marble(this.nextColor))
+      .setDisplaySize(this.cfg.spacing * 0.62, this.cfg.spacing * 0.62)
+      .setAlpha(0.9)
       .setDepth(20)
+
+    this.placeCarried()
+  }
+
+  /**
+   * Taşınan iki topu kurbağaya göre yerleştirir: yüklü top ağızda, sıradaki
+   * top sırtında. İkisi de nişan yönüne göre döner.
+   *
+   * Sıradaki top eskiden sabit bir noktaya (kurbağanın altına) konuluyordu ve
+   * dönüşle birlikte güncellenmiyordu; kurbağa nişan aldıkça top gövdeden
+   * kopup havada kalıyordu.
+   */
+  private placeCarried(): void {
+    const cos = Math.cos(this.angle)
+    const sin = Math.sin(this.angle)
+
+    this.loaded.setPosition(this.x + cos * this.mouthOffset, this.y + sin * this.mouthOffset)
+    this.nextPreview.setPosition(this.x - cos * this.backOffset, this.y - sin * this.backOffset)
   }
 
   /** Zincirde bulunmayan rengi vermemek oyuncunun en sık şikayetini önler. */
@@ -90,11 +111,7 @@ export class Shooter {
   aimAt(px: number, py: number): void {
     this.angle = Math.atan2(py - this.y, px - this.x)
     this.frog.setRotation(this.angle + Math.PI / 2)
-    // Yüklü top kurbağanın ağzında kalsın.
-    this.loaded.setPosition(
-      this.x + Math.cos(this.angle) * this.mouthOffset,
-      this.y + Math.sin(this.angle) * this.mouthOffset,
-    )
+    this.placeCarried()
   }
 
   /** Nişan gücü: daha hızlı ateş + lazer nişangâh. */
@@ -155,14 +172,9 @@ export class Shooter {
   private reload(): void {
     this.currentColor = this.nextColor
     this.nextColor = this.pickColor()
-    this.loaded
-      .setTexture(TEX.marble(this.currentColor))
-      .setPosition(
-        this.x + Math.cos(this.angle) * this.mouthOffset,
-        this.y + Math.sin(this.angle) * this.mouthOffset,
-      )
-      .setScale(0)
+    this.loaded.setTexture(TEX.marble(this.currentColor)).setScale(0)
     this.nextPreview.setTexture(TEX.marble(this.nextColor))
+    this.placeCarried()
 
     this.scene.tweens.add({
       targets: this.loaded,
