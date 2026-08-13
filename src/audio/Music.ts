@@ -1,44 +1,54 @@
 import { AudioEngine, envelope } from './AudioEngine'
 
 /**
- * Prosedürel fon müziği. Ses dosyası yok — nota nota sentezleniyor.
+ * Sakin, üretken (generative) fon müziği. Ses dosyası yok — nota nota
+ * sentezleniyor.
  *
- * Ölçek: Frigyen dominant (A). Tür için klasik "kadim tapınak" rengini
- * veren ölçek budur; Zuma'nın Aztek temasıyla aynı aile.
+ * Önceki sürüm yorucuydu ve sebepleri somuttu:
+ *   - Döngü yalnızca 4 bardı ve aynen tekrar ediyordu.
+ *   - Her 16'lıkta şeyker, her barda birkaç kick vardı; sürekli "tık tık".
+ *   - Frigyen dominant gergin bir renk verir.
+ *   - Tempo tehlikeyle birlikte hızlanıyordu, yani baskı müzikten de geliyordu.
  *
- * Zamanlama, WebAudio'nun kendi saatiyle ileriye dönük planlanır
- * (lookahead scheduling). setInterval'ın kayması müziği bozmaz.
+ * Bu sürümde tam tersi:
+ *   - Majör pentatonik: yarım ses sürtüşmesi yok, yanlış nota çalmak
+ *     matematiksel olarak mümkün değil. Kulağa daima yumuşak gelir.
+ *   - Ezgi OLASILIKLA seçiliyor; döngü hiçbir zaman birebir tekrar etmiyor.
+ *     Tekrar yorgunluğunun asıl çaresi bu.
+ *   - Vurmalı yok. Yerine yavaş atakla açılan pad ve uzun sönümlü çan.
+ *   - Yankı (convolution reverb) ile mekân hissi.
+ *   - Tempo sabit 72 BPM; tehlike anında müzik hızlanmıyor, sadece hafif bir
+ *     alt drone giriyor. Baskıyı ses efektleri zaten veriyor.
  */
 
-const SCALE = [0, 1, 4, 5, 7, 8, 10] // frigyen dominant
-const ROOT_MIDI = 45 // A2
-const STEPS_PER_BAR = 16
-const BARS = 4
-const TOTAL_STEPS = STEPS_PER_BAR * BARS
+/** Majör pentatonik: 1 2 3 5 6 — hiçbir kombinasyonu tırmalamaz. */
+const SCALE = [0, 2, 4, 7, 9]
+const ROOT_MIDI = 48 // C3
 
-const LOOKAHEAD_S = 0.14
-const TICK_MS = 25
+const BPM = 72
+const STEPS_PER_BAR = 8 // sekizlik
+const BARS = 8
+const TOTAL_STEPS = STEPS_PER_BAR * BARS // 64 — tam bir döngü ~26,7 saniye
 
-/** Bar başına tonal merkez (ölçek derecesi). Döngüye hareket verir. */
-const BAR_ROOTS = [0, 0, 3, 4]
+const LOOKAHEAD_S = 0.2
+const TICK_MS = 40
 
-/** Marimba ezgisi: değer = ölçek derecesi (7 ve üstü bir oktav yukarı). */
-const LEAD: (number | null)[][] = [
-  [7, null, 9, null, 11, null, 9, null, 10, null, 9, null, 7, null, null, null],
-  [11, null, 10, null, 9, null, 7, null, 8, null, 7, null, 4, null, null, null],
-  [7, null, 11, null, 14, null, 11, null, 10, null, 9, null, 10, null, 11, null],
-  [9, null, 7, null, 4, null, 7, null, 9, null, 11, null, 9, null, 7, null],
+/**
+ * İki barda bir değişen akorlar. Yumuşak, çözülmüş bir dönüş:
+ * Imaj7 – vi7 – IVmaj7 – V6. Gerilim yaratmadan hareket verir.
+ */
+const PROGRESSION = [
+  { bass: 0, tones: [0, 4, 7, 11] },
+  { bass: 9, tones: [9, 12, 16, 19] },
+  { bass: 5, tones: [5, 9, 12, 16] },
+  { bass: 7, tones: [7, 11, 14, 16] },
 ]
-
-const KICK_STEPS = [0, 6, 10]
-const BASS_STEPS = [0, 3, 6, 8, 11, 14]
-const ACCENT_STEPS = [4, 12]
 
 function midiToFreq(midi: number): number {
   return 440 * Math.pow(2, (midi - 69) / 12)
 }
 
-/** Ölçek derecesini MIDI notasına çevirir; 7'nin katları oktav atlar. */
+/** Ölçek derecesini MIDI notasına çevirir; taşan dereceler oktav atlar. */
 function degreeToMidi(degree: number): number {
   const octave = Math.floor(degree / SCALE.length)
   const index = ((degree % SCALE.length) + SCALE.length) % SCALE.length
@@ -50,9 +60,49 @@ export class Music {
   private step = 0
   private nextNoteTime = 0
   private intensity = 0
-  private bpm = 96
 
-  constructor(private readonly engine: AudioEngine) {}
+  /** Ezginin son derecesi — sıçramak yerine adım adım gezinmesi için. */
+  private lastDegree = 7
+
+  private readonly reverb: ConvolverNode
+  private readonly dry: GainNode
+  private readonly wet: GainNode
+
+  constructor(private readonly engine: AudioEngine) {
+    const ctx = engine.ctx
+
+    this.dry = ctx.createGain()
+    this.dry.gain.value = 0.8
+    this.dry.connect(engine.musicBus)
+
+    this.reverb = this.buildReverb()
+    this.wet = ctx.createGain()
+    this.wet.gain.value = 0.55
+    this.wet.connect(this.reverb)
+    this.reverb.connect(engine.musicBus)
+  }
+
+  /**
+   * Üstel sönümlü gürültüden yapay bir oda dürtü yanıtı. Yankı, sakin
+   * müzikte "ucuz sentezleyici" hissini kaldıran tek en etkili şey.
+   */
+  private buildReverb(): ConvolverNode {
+    const ctx = this.engine.ctx
+    const seconds = 3.2
+    const length = Math.floor(ctx.sampleRate * seconds)
+    const buffer = ctx.createBuffer(2, length, ctx.sampleRate)
+
+    for (let ch = 0; ch < 2; ch++) {
+      const data = buffer.getChannelData(ch)
+      for (let i = 0; i < length; i++) {
+        data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, 2.8)
+      }
+    }
+
+    const convolver = ctx.createConvolver()
+    convolver.buffer = buffer
+    return convolver
+  }
 
   get isPlaying(): boolean {
     return this.timer !== null
@@ -61,7 +111,7 @@ export class Music {
   start(): void {
     if (this.timer !== null) return
     this.step = 0
-    this.nextNoteTime = this.engine.now + 0.1
+    this.nextNoteTime = this.engine.now + 0.15
     this.timer = window.setInterval(() => this.schedule(), TICK_MS)
   }
 
@@ -72,26 +122,27 @@ export class Music {
   }
 
   /**
-   * 0..1 — zincir deliğe yaklaştıkça yükselir. Tempoyu ve dolguyu artırır,
-   * oyuncu bakmadan da baskıyı hisseder.
+   * 0..1 — zincir deliğe yaklaştıkça yükselir.
+   *
+   * Tempoya DOKUNMUYOR. Yalnızca alçak bir drone'un varlığını belirliyor;
+   * oyuncu baskıyı hissetsin ama müzik yorucu hale gelmesin.
    */
   setIntensity(value: number): void {
     this.intensity = Math.min(Math.max(value, 0), 1)
-    this.bpm = 96 + this.intensity * 34
   }
 
+  /** Sekizlik nota süresi. Tempo sabit. */
   private get stepDuration(): number {
-    return 60 / this.bpm / 4 // onaltılık
+    return 60 / BPM / 2
   }
 
   private schedule(): void {
     const ctx = this.engine.ctx
     if (ctx.state !== 'running') return
 
-    // Sekme arka plana alınınca setInterval saniyede bire kadar kısılır ve
-    // `nextNoteTime` saatin çok gerisinde kalır. Geri dönüldüğünde döngü
-    // geçmişe ait yüzlerce notayı planlar; hepsi aynı anda çalıp gürültü
-    // patlamasına yol açar. Geride kaldıysak yeniden senkronla.
+    // Sekme arka plana alınınca setInterval kısılır ve zamanlayıcı saatin
+    // gerisinde kalır. Geri dönüldüğünde geçmişe ait onlarca nota aynı anda
+    // çalar. Geride kaldıysak yeniden senkronla.
     if (this.nextNoteTime < ctx.currentTime) {
       this.nextNoteTime = ctx.currentTime + 0.05
     }
@@ -103,103 +154,130 @@ export class Music {
     }
   }
 
-  private playStep(step: number, t: number): void {
+  playStep(step: number, t: number): void {
     const bar = Math.floor(step / STEPS_PER_BAR)
     const beat = step % STEPS_PER_BAR
+    const chord = PROGRESSION[Math.floor(bar / 2) % PROGRESSION.length]
 
-    if (KICK_STEPS.includes(beat)) this.kick(t)
-
-    // Şeyker: tek adımlarda, çift vuruşlarda daha güçlü.
-    if (beat % 2 === 1) this.shaker(t, beat % 4 === 3 ? 0.05 : 0.028)
-
-    // Yoğunluk arttıkça ek vurmalı katman girer.
-    if (this.intensity > 0.55 && beat % 4 === 2) this.shaker(t, 0.04)
-    if (this.intensity > 0.8 && beat === 14) this.kick(t)
-
-    if (BASS_STEPS.includes(beat)) {
-      const degree = BAR_ROOTS[bar] + (beat === 11 ? 4 : 0)
-      this.bass(t, midiToFreq(degreeToMidi(degree)))
+    // İki barda bir: pad akoru ve bas notası tazelenir.
+    if (beat === 0 && bar % 2 === 0) {
+      this.pad(t, chord.tones)
+      this.bass(t, midiToFreq(ROOT_MIDI - 12 + chord.bass))
     }
 
-    if (ACCENT_STEPS.includes(beat)) this.woodblock(t)
-
-    const degree = LEAD[bar][beat]
-    if (degree !== null) {
-      this.marimba(t, midiToFreq(degreeToMidi(degree) + 12), beat % 4 === 0 ? 0.13 : 0.09)
+    // Barın ortasında yumuşak bir bas tekrarı — nabız ama vurmalı değil.
+    if (beat === 4) {
+      this.bass(t, midiToFreq(ROOT_MIDI - 12 + chord.bass), 0.5)
     }
 
-    // Bar başlarında yumuşak pad — boşluğu doldurur.
-    if (beat === 0) this.pad(t, midiToFreq(degreeToMidi(BAR_ROOTS[bar]) + 12))
+    // Ezgi: her sekizlikte sabit bir desen yerine olasılık. Vurgulu
+    // sayılarda daha yüksek şans; döngü asla birebir tekrar etmiyor.
+    const onBeat = beat % 2 === 0
+    const chance = onBeat ? 0.5 : 0.22
+    if (Math.random() < chance) {
+      // Komşu derecelere yürü: sıçramalar tedirgin edici olur.
+      const walk = [-2, -1, -1, 0, 1, 1, 2][Math.floor(Math.random() * 7)]
+      this.lastDegree = Math.min(Math.max(this.lastDegree + walk, 4), 13)
+      this.bell(t, midiToFreq(degreeToMidi(this.lastDegree) + 12), onBeat ? 0.1 : 0.06)
+    }
+
+    // Nadiren yüksek bir parıltı notası — dokuya hareket katar.
+    if (beat === 6 && Math.random() < 0.25) {
+      this.bell(t + 0.08, midiToFreq(degreeToMidi(this.lastDegree + 7) + 12), 0.045)
+    }
+
+    // Tehlike: tempo değil, alçak bir drone. Hız artışı stres yaratıyordu.
+    if (this.intensity > 0.45 && beat === 0) {
+      this.drone(t, midiToFreq(ROOT_MIDI - 24 + chord.bass), 0.05 + this.intensity * 0.06)
+    }
   }
 
-  private kick(t: number): void {
+  /** Her sese hem kuru hem yankılı yol. */
+  private send(node: AudioNode): void {
+    node.connect(this.dry)
+    node.connect(this.wet)
+  }
+
+  /**
+   * Yavaş açılan, filtrelenmiş akor yastığı.
+   *
+   * Zarf bilerek elle yazıldı: ortak `envelope()` üstel sönüm kullanıyor ve
+   * çok dik iniyor. Pad'ler iki barda bir tazelendiği için eskisi neredeyse
+   * susmuş, yenisi henüz açılmamış oluyordu; arada duyulur bir boşluk kalıyordu.
+   * Burada araya bir SUSTAIN konuyor, böylece akorlar birbirine yumuşakça
+   * geçiyor ve zemin hiç kesilmiyor.
+   */
+  private pad(t: number, tones: number[]): void {
     const ctx = this.engine.ctx
-    const osc = ctx.createOscillator()
+    const beat = 60 / BPM
+    const attack = 2.0
+    const sustainUntil = beat * 8 // bir sonraki akor tetiklenene kadar tut
+    const release = 3.0
+    const dur = sustainUntil + release
+    const peak = 0.075
+
     const gain = ctx.createGain()
-    osc.type = 'sine'
-    osc.frequency.setValueAtTime(128, t)
-    osc.frequency.exponentialRampToValueAtTime(42, t + 0.11)
-    envelope(gain, t, 0.5, 0.004, 0.15)
-    osc.connect(gain).connect(this.engine.musicBus)
-    osc.start(t)
-    osc.stop(t + 0.22)
+    const lp = ctx.createBiquadFilter()
+    lp.type = 'lowpass'
+    lp.frequency.setValueAtTime(700, t)
+    lp.frequency.linearRampToValueAtTime(1500, t + dur * 0.4)
+    lp.frequency.linearRampToValueAtTime(650, t + dur)
+
+    gain.gain.setValueAtTime(0.0001, t)
+    gain.gain.exponentialRampToValueAtTime(peak, t + attack)
+    gain.gain.setValueAtTime(peak, t + sustainUntil)
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + dur)
+
+    lp.connect(gain)
+    this.send(gain)
+
+    for (const semitone of tones) {
+      // İki osilatör hafif detune: hareketli, "canlı" bir yastık.
+      for (const detune of [-5, 5]) {
+        const osc = ctx.createOscillator()
+        const g = ctx.createGain()
+        osc.type = 'triangle'
+        osc.frequency.value = midiToFreq(ROOT_MIDI + semitone)
+        osc.detune.value = detune
+        g.gain.value = 0.3
+        osc.connect(g).connect(lp)
+        osc.start(t)
+        osc.stop(t + dur + 1.5)
+      }
+    }
   }
 
-  private shaker(t: number, peak: number): void {
-    const ctx = this.engine.ctx
-    const src = this.engine.noiseSource()
-    const hp = ctx.createBiquadFilter()
-    const gain = ctx.createGain()
-    hp.type = 'highpass'
-    hp.frequency.value = 6500
-    envelope(gain, t, peak, 0.002, 0.045)
-    src.connect(hp).connect(gain).connect(this.engine.musicBus)
-    src.start(t)
-    src.stop(t + 0.09)
-  }
-
-  private woodblock(t: number): void {
-    const ctx = this.engine.ctx
-    const osc = ctx.createOscillator()
-    const bp = ctx.createBiquadFilter()
-    const gain = ctx.createGain()
-    osc.type = 'square'
-    osc.frequency.value = 1180
-    bp.type = 'bandpass'
-    bp.frequency.value = 1600
-    bp.Q.value = 6
-    envelope(gain, t, 0.09, 0.002, 0.06)
-    osc.connect(bp).connect(gain).connect(this.engine.musicBus)
-    osc.start(t)
-    osc.stop(t + 0.12)
-  }
-
-  private bass(t: number, freq: number): void {
+  /** Yumuşak sinüs bas — vurgu değil, zemin. */
+  private bass(t: number, freq: number, level = 1): void {
     const ctx = this.engine.ctx
     const osc = ctx.createOscillator()
     const lp = ctx.createBiquadFilter()
     const gain = ctx.createGain()
-    osc.type = 'sawtooth'
+
+    osc.type = 'sine'
     osc.frequency.value = freq
     lp.type = 'lowpass'
-    lp.frequency.setValueAtTime(900, t)
-    lp.frequency.exponentialRampToValueAtTime(260, t + 0.2)
-    envelope(gain, t, 0.22, 0.006, 0.2)
-    osc.connect(lp).connect(gain).connect(this.engine.musicBus)
+    lp.frequency.value = 420
+
+    envelope(gain, t, 0.16 * level, 0.12, 1.5)
+    osc.connect(lp).connect(gain)
+    gain.connect(this.dry)
     osc.start(t)
-    osc.stop(t + 0.3)
+    osc.stop(t + 2.0)
   }
 
-  private marimba(t: number, freq: number, peak: number): void {
+  /** Müzik kutusu / çan: uzun sönümlü, saf tını. */
+  private bell(t: number, freq: number, peak: number): void {
     const ctx = this.engine.ctx
     const gain = ctx.createGain()
-    envelope(gain, t, peak, 0.005, 0.32)
-    gain.connect(this.engine.musicBus)
+    envelope(gain, t, peak, 0.012, 2.2)
+    this.send(gain)
 
-    // Temel + hafif dördüncü harmonik: tahta çubuk tınısı.
+    // Temel + oktav + hafif inharmonik üst ton: cam gibi ama sert değil.
     for (const [mult, level] of [
       [1, 1],
-      [4.02, 0.22],
+      [2, 0.3],
+      [3.01, 0.08],
     ] as const) {
       const osc = ctx.createOscillator()
       const g = ctx.createGain()
@@ -208,24 +286,26 @@ export class Music {
       g.gain.value = level
       osc.connect(g).connect(gain)
       osc.start(t)
-      osc.stop(t + 0.42)
+      osc.stop(t + 2.6)
     }
   }
 
-  private pad(t: number, freq: number): void {
+  /** Tehlike anında giren alçak drone. */
+  private drone(t: number, freq: number, peak: number): void {
     const ctx = this.engine.ctx
     const osc = ctx.createOscillator()
     const lp = ctx.createBiquadFilter()
     const gain = ctx.createGain()
-    osc.type = 'triangle'
+
+    osc.type = 'sine'
     osc.frequency.value = freq
-    osc.detune.value = -6
     lp.type = 'lowpass'
-    lp.frequency.value = 1200
-    const dur = (60 / this.bpm) * 3.4
-    envelope(gain, t, 0.07, 0.35, dur)
-    osc.connect(lp).connect(gain).connect(this.engine.musicBus)
+    lp.frequency.value = 300
+
+    envelope(gain, t, peak, 1.2, 2.6)
+    osc.connect(lp).connect(gain)
+    gain.connect(this.dry)
     osc.start(t)
-    osc.stop(t + dur + 0.5)
+    osc.stop(t + 4.2)
   }
 }
